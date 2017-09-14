@@ -12,17 +12,20 @@ import numpy as np
 import dicom
 import os
 import string
+import subprocess
 from scipy import ndimage
 
 
 class BATpreprocessingWF(object):
     """ class for Brown Adipose Tissue preprocessing """
-    def __init__(self):
-        pass
-    
+    def __init__(self, outputdir):
+        self.outputdir = outputdir
+        if not os.path.exists(self.outputdir):
+            subprocess.call('mkdir ' + '-p ' + self.outputdir, shell=True)
+
     def inputImage(self, filepathFatFraction, filepathT2Star, filepathFat, filepathWater):
         
-        # fat fraction(FF)
+        # Fat fraction(FF)
         self.filepathFF = filepathFatFraction
         self.imageFF = dicom.read_file(self.filepathFF)
         self.arrayFF = self.imageFF.pixel_array
@@ -64,7 +67,7 @@ class BATpreprocessingWF(object):
         self.shapeWF = np.shape(self.arrayWF)
                 
         if ifLogOutput != False:
-            dirname = os.path.dirname(self.filepathFF)             
+            dirname = self.outputdir             
             name, ext = os.path.splitext(self.filepathFF)
             inBaseName = os.path.basename(name)
             outBaseName = string.join(inBaseName.split("_")[0:-2], "_")
@@ -85,7 +88,7 @@ class BATpreprocessingWF(object):
         self.imageWF.Pixelimage = self.imageWF.pixel_array.tostring()
 
         if ifLogOutput != False:
-            dirname = os.path.dirname(self.filepathFF)             
+            dirname = self.outputdir             
             name, ext = os.path.splitext(self.filepathFF)
             inBaseName = os.path.basename(name)
             outBaseName = string.join(inBaseName.split("_")[0:-2], "_")
@@ -129,7 +132,7 @@ class BATpreprocessingWF(object):
 
 
         if ifLogOutput != False:
-            dirname = os.path.dirname(self.filepathFF)             
+            dirname = self.outputdir             
             name, ext = os.path.splitext(self.filepathFF)
             inBaseName = os.path.basename(name)
             outBaseName = string.join(inBaseName.split("_")[0:-2], "_")

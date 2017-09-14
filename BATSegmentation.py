@@ -25,91 +25,142 @@ def WriteListtoFile(filelist, filename):
         for i in filelist:
             f.write(i+'\n')
     return 1
+def main():
+    # preprocessing
+    inputroot = '/media/louis/Volume/ResearchData/BATSegmentationData'
+    outputroot = '/media/louis/Volume/ProgramWorkResult/BATSegresult'
+    filepathFatFraction = inputroot + '/ImageSplitFF/FileList.txt' 
+    filepathT2Star = inputroot + '/ImageSplitT2S/FileList.txt' 
+    filepathFat = inputroot + '/ImageSplitF/FileList.txt'
+    ilepathWater = inputroot + '/ImageSplitW/FileList.txt'
 
-# preprocessing
-filepathFatFraction = '', 
-filepathT2Star = '', 
-filepathFat = '', 
-ilepathWater = '', 
+    listFatFraction = readTxtIntoList(filepathFatFraction)
+    listT2Star = readTxtIntoList(filepathT2Star)
+    listFat = readTxtIntoList(filepathFat)
+    listWater = readTxtIntoList(ilepathWater)
 
-listFatFraction = readTxtIntoList(filepathFatFraction)
-listT2Star = readTxtIntoList(filepathT2Star)
-listFat = readTxtIntoList(filepathFat)
-listWater = readTxtIntoList(ilepathWater)
+    ifLogOutput = True
 
+    if len(listFatFraction)== len(filepathT2Star)== len(filepathT2Star)== len(filepathT2Star):
+        N = len(listFatFraction)
+    else:
+        raise ValueError('the length of the files should be same')
 
-ifLogOutput = True
+    outputdir = outputroot + '/WFPreProcessing'
+    WFprocessing = BATpreprocessingWF(outputdir)
+    for i in xrange(N):
+        WFprocessing.inputImage(listFatFraction[i], listT2Star[i], listFat[i], listWater[i])
+        WFprocessing.computeWFmap(ifLogOutput)
+        WFprocessing.removeBackgroundmap(threshold = 28, ifLogOutput)
+        WFprocessing.removeSkinVoxels(FFthreshold = 30, T2Sthreshold = 0.125, iternum = 5,\
+                                    ClossingSize = 5, ErosionSize = 7, ifLogOutput)
+    # recovering the preprocessed result
+    preprocessedFile = outputroot + '/WFPreProcessing'
+    ImageList = []
+    for root, dirnames, filenames in os.walk(preprocessedFile):
+        for name in enumerate(filenames):
+            if name.endswith('_WF_RSkin.dcm'):
+                ImageDir = os.path.join(root, name)
+                ImageList.append(ImageDir)
+    WriteListtoFile(ImageList, preprocessedFile + '/preProcessedWFImage.txt')
 
-if len(listFatFraction)== len(filepathT2Star)== len(filepathT2Star)== len(filepathT2Star):
-    N = len(listFatFraction)
-else:
-    raise ValueError('the length of the files should be same')
-for i in xrange(N):
-    WFprocessing = BATpreprocessingWF()
-    WFprocessing.inputImage(listFatFraction[i], listT2Star[i], listFat[i], listWater[i])
-    WFprocessing.computeWFmap(ifLogOutput)
-    WFprocessing.removeBackgroundmap(threshold = 28, ifLogOutput)
-    WFprocessing.removeSkinVoxels(FFthreshold = 30, T2Sthreshold = 0.125, iternum = 5,\
-                                  ClossingSize = 5, ErosionSize = 7, ifLogOutput)
+    # multi atlas registartion
+    atlasNum = 10
 
-# multi atlas registartion
-atlasImageListdir = '' 
-atlasLabelListdir = '' 
-atlasNum = 10
-segmentation = MultiAtlasSegmentation(atlasImageListdir, atlasLabelListdir, atlasNum)
-segmentation.readAtlasImagetoList()
-segmentation.readAtlasLabeltoList()
+    readTxtIntoList(preprocessedFile + '/preProcessedWFImage.txt')
+    WriteListtoFile(ImageList[: atlasNum], preprocessedFile + '/atlasImageListdir.txt')
+    WriteListtoFile(ImageList[atlasNum :], preprocessedFile + '/testImageListdir.txt')
 
-affinePara={}
-movingimagedir = ''
-imageOutputDir = ''
-labelOutputDir = ''
-movingimageList = readTxtIntoList(movingimagedir)
-for movIm in movingimageList:
-    segmentation.AffineRegistartion(movIm, imageOutputDir, labelOutputDir, affinePara)
+    readTxtIntoList(inputroot + '/ImageSplitLeft/FileList.txt')
+    WriteListtoFile(ImageList[: atlasNum], inputroot + '/ImageSplitLeft/atlasLabelListdir.txt')
+    WriteListtoFile(ImageList[atlasNum :], preprocessedFile + '/testLabelListdir.txt')
+
+    atlasImageListdir = preprocessedFile + '/atlasImageListdir.txt' 
+    atlasLabelListdir = inputroot + '/ImageSplitLeft/atlasLabelListdir.txt' 
     
-BsplinePara={}
-movingimagedir = ''
-imageOutputDir = ''
-labelOutputDir = '' 
-movingimageList = readTxtIntoList(movingimagedir)
-for movIm in movingimageList:
-    segmentation.BsplineRegistartion(self, movIm, imageOutputDir, labelOutputDir, BsplinePara)
+    segmentation = MultiAtlasSegmentation(atlasImageListdir, atlasLabelListdir, atlasNum)
+    segmentation.readAtlasImagetoList()
+    segmentation.readAtlasLabeltoList()
 
-for i in xrange(len(movingimageList)):
-    labelListdir = ''
-    fusedLabeldir = ''
+    affinePara={}
+    affinePara['Optimizer']='AdaptiveStochasticGradientDescent'
+    affinePara['NumberOfResolutions']='4'
+    affinePara['MaximumNumberOfIterations']='3000'
+    affinePara['FinalBSplineInterpolationOrder']='1'
+
+    BsplinePara={}
+    BsplinePara['Optimizer']='AdaptiveStochasticGradientDescent'
+    BsplinePara['NumberOfResolutions']='4'
+    BsplinePara['MaximumNumberOfIterations']='7000'
+    BsplinePara['FinalBSplineInterpolationOrder']='1'
+    BsplinePara['FinalGridSpacingInPhysicalUnits']='20.0 20.0 20.0'
+
+    fixedimagedir = preprocessedFile + '/testImageListdir.txt'
+    fixedimageList = readTxtIntoList(fixedimagedir)
+    fusedLabeldir = outputroot + '/fusedLabels/'
+    if not os.path.exists(affineImageOut):
+        subprocess.call('mkdir ' + '-p ' + affineImageOut, shell=True)
     threshold = 0.5
-    segmentation.FusionofSegmentation(labelListdir,threshold,fusedLabeldir)
 
-# PostProcessing
+    for fixIm in fixedimageList:
+        name, ext = os.path.splitext(fixIm)
+        baseName = os.path.basename(name)
+        
+        # affine segmentation
+        affineImageOut = outputroot + '/MASAffine/alignedImage/' + baseName
+        affineLabelOut = outputroot + '/MASAffine/alignedLabel/' + baseName
+        if not os.path.exists(affineImageOut):
+            subprocess.call('mkdir ' + '-p ' + affineImageOut, shell=True)
+        if not os.path.exists(affineLabelOut):
+            subprocess.call('mkdir ' + '-p ' + affineLabelOut, shell=True)
+        
+        segmentation.AffineRegistartion(fixIm, affineImageOut, affineLabelOut, affinePara)
+        
+        # Bspline segmentation
+        BsplineimageOut = outputroot + '/MASBspline/alignedImage/' + baseName
+        BsplinelabelOut = outputroot + '/MASBspline/alignedLabel/' + baseName 
+        if not os.path.exists(BsplineimageOut):
+            subprocess.call('mkdir ' + '-p ' + BsplineimageOut, shell=True)
+        if not os.path.exists(BsplinelabelOut):
+            subprocess.call('mkdir ' + '-p ' + BsplinelabelOut, shell=True)
 
-filepathLabel = '' 
-filepathFatFraction = '' 
-filepathT2Star = ''
-filepathFat = ''
-filepathWater = ''
+        segmentation.BsplineRegistartion(fixIm, BsplineimageOut, BsplinelabelOut, BsplinePara)
 
-listLabel = readTxtIntoList(filepathLabel)
-listFatFraction = readTxtIntoList(filepathFatFraction)
-listT2Star = readTxtIntoList(filepathT2Star)
-listFat = readTxtIntoList(filepathFat)
-listWater = readTxtIntoList(ilepathWater)
+        # Label Fussion
+        labelListdir = outputroot + '/MASBspline/alignedLabel/' + baseName + 'FileList.txt'
+        detailfusedLabeldir = fusedLabeldir + baseName +'_fusedLabel.nrrd'
+        segmentation.FusionofSegmentation(labelListdir,threshold, detailfusedLabeldir)
 
-ifLogOutput = True
+    # PostProcessing
 
-if len(listLabel)==len(listFatFraction)== len(filepathT2Star)== len(filepathT2Star)== len(filepathT2Star):
-    N = len(listFatFraction)
-else:
-    raise ValueError('the length of the files should be same')
-dilationPara = {}
-ClossingPara = {}
-ErosionPara = {}
-for i in xrange(len(N)):
-    postProcessing = postRefinement()
-    postProcessing.inputImage(listLabel[i], listFatFraction[i], listT2Star[i], listFat[i], listWater[i])
-    postProcessing.fineAdjustSegmentation(thresholdFF =, erosionIterNum =, T2Sthreshold =, ifLogOutput)
-    postProcessing.removeBoneadnAir(threshold =, ifLogOutput)
-    postProcessing.finalRefine(dilationPara, ClossingPara, ErosionPara, ifLogOutput)
+    filepathLabel = '' 
+    filepathFatFraction = '' 
+    filepathT2Star = ''
+    filepathFat = ''
+    filepathWater = ''
 
-# calculate dice score
+    listLabel = readTxtIntoList(filepathLabel)
+    listFatFraction = readTxtIntoList(filepathFatFraction)
+    listT2Star = readTxtIntoList(filepathT2Star)
+    listFat = readTxtIntoList(filepathFat)
+    listWater = readTxtIntoList(ilepathWater)
+
+    ifLogOutput = True
+
+    if len(listLabel)==len(listFatFraction)== len(filepathT2Star)== len(filepathT2Star)== len(filepathT2Star):
+        N = len(listFatFraction)
+    else:
+        raise ValueError('the length of the files should be same')
+    dilationPara = {}
+    ClossingPara = {}
+    ErosionPara = {}
+    for i in xrange(len(N)):
+        postProcessing = postRefinement()
+        postProcessing.inputImage(listLabel[i], listFatFraction[i], listT2Star[i], listFat[i], listWater[i])
+        postProcessing.fineAdjustSegmentation(thresholdFF =, erosionIterNum =, T2Sthreshold =, ifLogOutput)
+        postProcessing.removeBoneadnAir(threshold =, ifLogOutput)
+        postProcessing.finalRefine(dilationPara, ClossingPara, ErosionPara, ifLogOutput)
+    # calculate dice score
+
+if __name__ == "__main__":
+    main()

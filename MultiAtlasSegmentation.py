@@ -28,19 +28,19 @@ class MultiAtlasSegmentation(object):
         """
         read atlas list from given atlas dir to list
         """
-        self.atlasImageList = []
+        self.firstAtlasImageList = []
         with open(self.atlasImageListdir) as f:
-            self.atlasImageList = f.read().splitlines()
-        return self.atlasImageList
+            self.firstAtlasImageList = f.read().splitlines()
+        return self.firstAtlasImageList
     
     def readAtlasLabeltoList(self):
         """
         read atlas list from given atlas dir to list
         """
-        self.atlasLabelList = []
-        with open(self.atlasLabelListdir) as f:
-            self.atlasLabelList = f.read().splitlines()
-        return self.atlasLabelList
+        self.firstAtlasLabelList = []
+        with open(self.firstAtlasLabelList) as f:
+            self.firstAtlasLabelList = f.read().splitlines()
+        return self.firstAtlasLabelList
    
     def __readFiletoList(self, filename):
         outputList = []
@@ -54,7 +54,7 @@ class MultiAtlasSegmentation(object):
                 f.write(i+'\n')
         return 1
 
-    def AffineRegistartion(self, movingimagedir, imageOutputDir, labelOutputDir, affinePara):
+    def AffineRegistartion(self, fixedIm, imageOutputDir, labelOutputDir, affinePara):
         """
         multi atlas segmentation
         affine registration
@@ -65,9 +65,9 @@ class MultiAtlasSegmentation(object):
         logFile = open(logFileDir, 'w')
         
         # calculating the registation parameters
-        movingImage = sitk.ReadImage(movingimagedir)      
+        fixedImage = sitk.ReadImage(fixedIm)     
         selx = sitk.ElastixImageFilter()
-        selx.SetMovingImage(movingImage)
+        selx.SetFixedImage(fixedImage)
         
         paraTrans = sitk.GetDefaultParameterMap("translation")
         paraAffine = sitk.GetDefaultParameterMap("affine")
@@ -77,17 +77,17 @@ class MultiAtlasSegmentation(object):
             paraAffine[key] = [value]
         
         RegImOutputList = []
-        for i in range(len(self.atlasImageList)):
-            fixedIm = self.atlasImageList[i]
-            name, ext = os.path.splitext(fixedIm)
+        for i in range(len(self.firstAtlasImageList)):
+            movingIm = self.firstAtlasImageList[i]
+            name, ext = os.path.splitext(movingIm)
             baseName = os.path.basename(name)
             transformPara = imageOutputDir + '/ImAffineReg_' + baseName
             if not os.path.exists(transformPara):
                 subprocess.call('mkdir ' + '-p ' + transformPara, shell=True)
         
-            # Run registration                      
-            fixedImage = sitk.ReadImage(fixedIm)
-            selx.SetFixedImage(fixedImage)
+            # Run registration     
+            movingImage = sitk.ReadImage(movingIm)                  
+            selx.SetMovingImage(movingImage)
             selx.SetLogFileName(logFileDir)
             selx.SetOutputDirectory(transformPara)                        
             selx.SetParameterMap(paraTrans)
@@ -95,11 +95,12 @@ class MultiAtlasSegmentation(object):
             selx.Execute()
             
             # write the result image to the file 
-            RegImOutput= imageOutputDir+'/ImAffineReg_' + baseName + '.nrrd'
+            RegImOutput= imageOutputDir + '/ImAffineReg_' + baseName + '.nrrd'
             RegImOutputList.append(RegImOutput)
             sitk.WriteImage(selx.GetResultImage(), RegImOutput)
             print ("the %d th registration is finished" % (i))
             
+        self.secondAtlasImageList = RegImOutputList
         self.__WriteListtoFile(RegImOutputList, imageOutputDir+"/FileList.txt")  
         
         # aligning the labels
@@ -114,9 +115,9 @@ class MultiAtlasSegmentation(object):
 
         RegLabOutputList = []
         
-        for i in range(len(self.atlasLabelList)):              
+        for i in range(len(self.firstAtlasLabelList)):              
             
-            movingIm = self.atlasLabelList[i]
+            movingIm = self.firstAtlasLabelList[i]
             movingImage = sitk.ReadImage(movingIm)
                     
             transformParadir_Trans = transformParaMaplist[i] + '/TransformParameters.0.txt'       
@@ -142,6 +143,7 @@ class MultiAtlasSegmentation(object):
             sitk.WriteImage(stran.GetResultImage(), LabImOutput)
             print ("the %d th registration is finished" % (i))  
 
+        self.secondAtlasLabelList = RegLabOutputList
         self.__WriteListtoFile(RegLabOutputList, labelOutputDir+"/FileList.txt")    
 
         e = time.time()
@@ -150,7 +152,7 @@ class MultiAtlasSegmentation(object):
         print 'affine registration is finished/n'
         print 'Total running time: %f mins'%(l/60.0)
 
-    def BsplineRegistartion(self, movingimagedir, imageOutputDir, labelOutputDir, BsplinePara):
+    def BsplineRegistartion(self, fixedIm, imageOutputDir, labelOutputDir, BsplinePara):
         """
         multi atlas segmentation
         Bspline registration
@@ -161,27 +163,27 @@ class MultiAtlasSegmentation(object):
         logFile = open(logFileDir, 'w')
         
         # calculating the registation parameters
-        movingImage = sitk.ReadImage(movingimagedir)      
+        fixedImage = sitk.ReadImage(fixedIm)      
         selx = sitk.ElastixImageFilter()
-        selx.SetMovingImage(movingImage)
-        
+        selx.SetFixedImage(fixedImage)
+                
         paraBspline = sitk.GetDefaultParameterMap("Bspline")
         paraBspline['Metric'] = ['AdvancedNormalizedCorrelation']
         for key, value in BsplinePara.items():
             paraBspline[key] = [value]
         
         RegImOutputList = []
-        for i in range(len(self.atlasImageList)):
-            fixedIm = self.atlasImageList[i]
-            name, ext = os.path.splitext(fixedIm)
+        for i in range(len(self.secondAtlasImageList)):
+            movingIm = self.secondAtlasImageList[i]
+            name, ext = os.path.splitext(movingIm)
             baseName = os.path.basename(name)
             transformPara = imageOutputDir + '/ImBsplineReg_' + baseName
             if not os.path.exists(transformPara):
                 subprocess.call('mkdir ' + '-p ' + transformPara, shell=True)
         
             # Run registration                      
-            fixedImage = sitk.ReadImage(fixedIm)
-            selx.SetFixedImage(fixedImage)
+            movingImage = sitk.ReadImage(movingIm)
+            selx.SetMovingImage(movingImage)
             selx.SetLogFileName(logFileDir)
             selx.SetOutputDirectory(transformPara)                        
             selx.AddParameterMap(paraBspline)
@@ -199,17 +201,17 @@ class MultiAtlasSegmentation(object):
         stran = sitk.TransformixImageFilter()
 
         transformParaMaplist = []    
-        for i in self.atlasLabelList:
+        for i in self.secondAtlasLabelList:
             name, ext = os.path.splitext(i)
             labelBaseName = os.path.basename(name)
             imageBaseName = string.join(labelBaseName.split("_")[0:-2], "_")
-            transformParaMaplist.append(imageOutputDir+'/ImBsplineReg_' + imageBaseName) 
+            transformParaMaplist.append(imageOutputDir + '/ImBsplineReg_' + imageBaseName) 
 
         RegLabOutputList = []
         
-        for i in range(len(self.atlasLabelList)):              
+        for i in range(len(self.secondAtlasLabelList)):              
             
-            movingIm = self.atlasLabelList[i]
+            movingIm = self.secondAtlasLabelList[i]
             movingImage = sitk.ReadImage(movingIm)
                    
             transformParadir_Bspline = transformParaMaplist[i] + '/TransformParameters.0.txt' 
@@ -237,7 +239,7 @@ class MultiAtlasSegmentation(object):
         print 'Bspline registration is finished/n'
         print 'Total running time: %f mins'%(l/60.0)
 
-    def FusionofSegmentation(self,labelListdir,threshold,fusedLabeldir):
+    def FusionofSegmentation(self, labelListdir, threshold, fusedLabeldir):
         labelList = self.__readFiletoList(labelListdir)
         image = sitk.ReadImage(labelList[0])
         posibilityMap = np.zeros_like(sitk.GetArrayFromImage(image))
