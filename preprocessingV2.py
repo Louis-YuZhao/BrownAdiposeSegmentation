@@ -73,7 +73,7 @@ class BATpreprocessingWF(object):
             dirname = self.outputdir + '/'            
             name, ext = os.path.splitext(self.filepathFF)
             inBaseName = os.path.basename(name)
-            outBaseName = string.join(inBaseName.split("_")[0:-2], "_")
+            outBaseName = string.join(inBaseName.split("_")[0:-1], "_")
             outputdirection = dirname + outBaseName + '_WF' + '.nrrd'             
             sitk.WriteImage(self.imageWF, outputdirection)
         else:
@@ -95,7 +95,7 @@ class BATpreprocessingWF(object):
             dirname = self.outputdir + '/'            
             name, ext = os.path.splitext(self.filepathFF)
             inBaseName = os.path.basename(name)
-            outBaseName = string.join(inBaseName.split("_")[0:-2], "_")
+            outBaseName = string.join(inBaseName.split("_")[0:-1], "_")
             outputdirection = dirname + outBaseName + '_WF_RBG' + '.nrrd'             
             sitk.WriteImage(self.imageWF, outputdirection)
         else:
@@ -108,31 +108,47 @@ class BATpreprocessingWF(object):
         # skin FFthreshold <= 30%, R2_star >= 80 s-1 (T2_star <= 0.0125S)
         idxFF = (self.arrayFF <= FFthreshold)
         idxT2S = (self.arrayT2S >= T2Sthreshold)
-        suspectSkinArea = idxFF & idxT2S
-        firstErosionSkinArea = np.zeros_like(suspectSkinArea)
-        secondClossingArea = np.zeros_like(suspectSkinArea)
-        thirdErosionArea = np.zeros_like(suspectSkinArea)
+        safeSkinArea = ~(idxFF & idxT2S)
+        firstErosionSkinArea = np.zeros_like(safeSkinArea)
+        secondClossingArea = np.zeros_like(safeSkinArea)
+        thirdErosionArea = np.zeros_like(safeSkinArea)
         x,y,z = self.shapeFF
 
         for i in xrange(x):
-            firstErosionSkinArea[i,:,:]= ndimage.binary_erosion(suspectSkinArea[i,:,:],\
-            iterations = iternum).astype(suspectSkinArea.dtype)
+            firstErosionSkinArea[i,:,:]= ndimage.binary_erosion(safeSkinArea[i,:,:],\
+            iterations = iternum).astype(safeSkinArea.dtype)
         
         for i in xrange(x):
             secondClossingArea[i,:,:] = ndimage.binary_closing(firstErosionSkinArea[i,:,:],\
-            structure = ClossingSize).astype(suspectSkinArea.dtype)
+            structure = ClossingSize).astype(safeSkinArea.dtype)
         
-        secondClossingArea = ndimage.filters.median_filter(secondClossingArea, size=filterSize,\
-         footprint=None, output=None, mode='reflect', cval=0.0, origin=0)
+#        secondClossingArea[i,:,:] = ndimage.filters.median_filter(secondClossingArea[i,:,:], size=filterSize,\
+#         footprint=None, output=None, mode='reflect', cval=0.0, origin=0)
         
         for i in xrange(x):
             thirdErosionArea[i,:,:] = ndimage.binary_erosion(secondClossingArea[i,:,:],\
-            structure = ErosionSize).astype(suspectSkinArea.dtype)
+            structure = ErosionSize).astype(safeSkinArea.dtype)
 
-        afterRemoveSkin = np.zeros(np.shape(self.arrayWF))
-        afterRemoveSkin[~suspectSkinArea] = self.arrayWF[~suspectSkinArea]
+        afterRemoveSkin = np.zeros_like(self.arrayWF)
+        finalIndex = (safeSkinArea > 0)
+        afterRemoveSkin[finalIndex] = self.arrayWF[finalIndex]
         
-        #----------------------------------------------------------------------
+        self.arrayWF = afterRemoveSkin
+        self.imageWF = sitk.GetImageFromArray(self.arrayWF)
+        self.imageWF.SetOrigin(self.imageFF.GetOrigin())                               
+        self.imageWF.SetSpacing(self.imageFF.GetSpacing())                                
+        self.imageWF.SetDirection(self.imageFF.GetDirection())   
+
+        if ifLogOutput != False:
+            dirname = self.outputdir + '/'            
+            name, ext = os.path.splitext(self.filepathFF)
+            inBaseName = os.path.basename(name)
+            outBaseName = string.join(inBaseName.split("_")[0:-1], "_")
+            outputdirection = dirname + outBaseName + '_WF_RSkin' + '.nrrd'             
+            sitk.WriteImage(self.imageWF, outputdirection)
+        else:
+            return self.arrayWF              
+#----------------------------------------------------------------------
 #        # afterRemoveSkin
 #        self.arrayTest = np.float32(afterRemoveSkin)
 #        self.imageTest = sitk.GetImageFromArray(self.arrayTest)
@@ -149,10 +165,7 @@ class BATpreprocessingWF(object):
 #            sitk.WriteImage(self.imageTest, outputdirection)
 #        else:
 #            return self.arrayTest
-        #----------------------------------------------------------------------
-        idxRemoveSkin = (thirdErosionArea>0)
-        afterRemoveSkin[idxRemoveSkin] = self.arrayWF[idxRemoveSkin]
-
+#----------------------------------------------------------------------
 #------------------------------------------------------------------------------        
 #        # idxFF
 #        self.arrayTest = np.float32(idxFF)
@@ -189,7 +202,7 @@ class BATpreprocessingWF(object):
 #            return self.arrayTest
 #        
 #        # suspectSkinArea        
-#        self.arrayTest = np.float32(suspectSkinArea)
+#        self.arrayTest = np.float32(safeSkinArea)
 #        self.imageTest = sitk.GetImageFromArray(self.arrayTest)
 #        self.imageTest.SetOrigin(self.imageFF.GetOrigin())                               
 #        self.imageTest.SetSpacing(self.imageFF.GetSpacing())                                
@@ -257,22 +270,6 @@ class BATpreprocessingWF(object):
 #            return self.arrayTest
 
 #------------------------------------------------------------------------------
-        self.arrayWF = afterRemoveSkin
-        self.imageWF = sitk.GetImageFromArray(self.arrayWF)
-        self.imageWF.SetOrigin(self.imageFF.GetOrigin())                               
-        self.imageWF.SetSpacing(self.imageFF.GetSpacing())                                
-        self.imageWF.SetDirection(self.imageFF.GetDirection())   
-
-        if ifLogOutput != False:
-            dirname = self.outputdir + '/'            
-            name, ext = os.path.splitext(self.filepathFF)
-            inBaseName = os.path.basename(name)
-            outBaseName = string.join(inBaseName.split("_")[0:-2], "_")
-            outputdirection = dirname + outBaseName + '_WF_RSkin' + '.nrrd'             
-            sitk.WriteImage(self.imageWF, outputdirection)
-        else:
-            return self.arrayWF      
-
 class BATpreprocessingT2S(object):
     """ class for Brown Adipose Tissue """
     def __init__(self, outputdir):
@@ -320,7 +317,7 @@ class BATpreprocessingT2S(object):
         """
         waterAndfatArray = self.arrayW + self.arrayF
         idx = (waterAndfatArray <= threshold) # idx of the bone and the air area. 
-        self.arrayT2SProcessed = sitk.GetArrayFromImage(self.arrayT2S)
+        self.arrayT2SProcessed = sitk.GetArrayFromImage(self.imageT2S)
         self.arrayT2SProcessed[idx] = 0
 
         self.imageT2SProcessed = sitk.GetImageFromArray(self.arrayT2SProcessed)
@@ -329,67 +326,75 @@ class BATpreprocessingT2S(object):
         self.imageT2SProcessed.SetDirection(self.imageT2S.GetDirection())   
 
         if ifLogOutput != False:
-            dirname = os.path.dirname(self.filepathT2S)             
+            dirname = self.outputdir + '/'             
             name, ext = os.path.splitext(self.filepathT2S)
             inBaseName = os.path.basename(name)
             outBaseName = string.join(inBaseName.split("_")[0:-2], "_")
             outputdirection = dirname + outBaseName + '_T2S_RBG' + '.nrrd'             
-            sitk.WriteImage(self.imagimageT2SProcessedeWF, outputdirection)
+            sitk.WriteImage(self.imageT2SProcessed, outputdirection)
         else:
-            return self.imageT2SProcessed       
-    
-    def removeSkinVoxels(self, FFthreshold, T2Sthreshold, iternum, ClossingSize, ErosionSize, ifLogOutput):
+            return self.imageT2SProcessed
+  
+    def removeSkinVoxels(self, FFthreshold, T2Sthreshold, iternum, filterSize,\
+                         ClossingSize, ErosionSize, ifLogOutput):
         """ remove the skin voxel
         """
         # skin FFthreshold <= 30%, R2_star >= 80 s-1 (T2_star <= 0.0125S)
         idxFF = (self.arrayFF <= FFthreshold)
         idxT2S = (self.arrayT2S >= T2Sthreshold)
-        suspectSkinArea = idxFF & idxT2S
-        firstErosionSkinArea = np.zeros_like(suspectSkinArea)
-        secondClossingArea = np.zeros_like(suspectSkinArea)
-        thirdErosionArea = np.zeros_like(suspectSkinArea)
-        x,y,z = self.shapeT2S
+        safeSkinArea = ~(idxFF & idxT2S)
+        firstErosionSkinArea = np.zeros_like(safeSkinArea)
+        secondClossingArea = np.zeros_like(safeSkinArea)
+        thirdErosionArea = np.zeros_like(safeSkinArea)
+        x,y,z = np.shape(self.arrayT2S)
 
         for i in xrange(x):
-            firstErosionSkinArea[i,:,:]= ndimage.binary_erosion(suspectSkinArea[i,:,:],\
-            iterations = iternum).astype(suspectSkinArea.dtype)
+            firstErosionSkinArea[i,:,:]= ndimage.binary_erosion(safeSkinArea[i,:,:],\
+            iterations = iternum).astype(safeSkinArea.dtype)
         
         for i in xrange(x):
             secondClossingArea[i,:,:] = ndimage.binary_closing(firstErosionSkinArea[i,:,:],\
-            structure = ClossingSize).astype(suspectSkinArea.dtype)
+            structure = ClossingSize).astype(safeSkinArea.dtype)
+        
+#        secondClossingArea[i,:,:] = ndimage.filters.median_filter(secondClossingArea[i,:,:], size=filterSize,\
+#         footprint=None, output=None, mode='reflect', cval=0.0, origin=0)
         
         for i in xrange(x):
             thirdErosionArea[i,:,:] = ndimage.binary_erosion(secondClossingArea[i,:,:],\
-            structure = ErosionSize).astype(suspectSkinArea.dtype)
+            structure = ErosionSize).astype(safeSkinArea.dtype)
 
-        afterRemoveSkin = np.zeros(np.shape(self.arrayT2SProcessed))
-        afterRemoveSkin[~suspectSkinArea] = self.arrayT2SProcessed[~suspectSkinArea]
-        idxRemoveSkin = (thirdErosionArea>0)
-        afterRemoveSkin[idxRemoveSkin] = self.arrayT2SProcessed[idxRemoveSkin]
-
+        afterRemoveSkin = np.zeros_like(self.arrayT2S)
+        finalIndex = (safeSkinArea > 0)
+        afterRemoveSkin[finalIndex] = self.arrayT2S[finalIndex]
+        
         self.arrayT2SProcessed = afterRemoveSkin
         self.imageT2SProcessed = sitk.GetImageFromArray(self.arrayT2SProcessed)
         self.imageT2SProcessed.SetOrigin(self.imageT2S.GetOrigin())                               
         self.imageT2SProcessed.SetSpacing(self.imageT2S.GetSpacing())                                
         self.imageT2SProcessed.SetDirection(self.imageT2S.GetDirection())   
 
-
         if ifLogOutput != False:
-            dirname = os.path.dirname(self.filepathFF)             
-            name, ext = os.path.splitext(self.filepathFF)
+            dirname = self.outputdir + '/'                
+            name, ext = os.path.splitext(self.filepathT2S)
             inBaseName = os.path.basename(name)
             outBaseName = string.join(inBaseName.split("_")[0:-2], "_")
             outputdirection = dirname + outBaseName + '_T2S_RSkin' + '.nrrd'            
-            sitk.WriteImage(self.imagimageT2SProcessedeWF, outputdirection)
+            sitk.WriteImage(self.imageT2SProcessed, outputdirection)
         else:
             return self.imageT2SProcessed   
 
     def reduceNoise(self, filterSize, ifLogOutput):
         """ reduce noise by using median-filter
-        """
+        """        
+        x,y,z = np.shape(self.arrayT2S)
         inputarray = self.arrayT2SProcessed
-        self.arrayT2SProcessed = ndimage.filters.median_filter(inputarray, size=filterSize,\
-         footprint=None, output=None, mode='reflect', cval=0.0, origin=0)
+        # 2D median-filter
+        for i in xrange(x):
+            self.arrayT2SProcessed[i,:,:] = ndimage.filters.median_filter(inputarray[i,:,:], size=filterSize,\
+                                  footprint=None, output=None, mode='reflect', cval=0.0, origin=0)
+        # 3D median-filter
+#        self.arrayT2SProcessed = ndimage.filters.median_filter(inputarray, size=filterSize,\
+#         footprint=None, output=None, mode='reflect', cval=0.0, origin=0)
 
         self.imageT2SProcessed = sitk.GetImageFromArray(self.arrayT2SProcessed)
         self.imageT2SProcessed.SetOrigin(self.imageT2S.GetOrigin())                               
@@ -397,11 +402,11 @@ class BATpreprocessingT2S(object):
         self.imageT2SProcessed.SetDirection(self.imageT2S.GetDirection())   
 
         if ifLogOutput != False:
-            dirname = os.path.dirname(self.filepathFF)             
-            name, ext = os.path.splitext(self.filepathFF)
+            dirname = self.outputdir + '/'             
+            name, ext = os.path.splitext(self.filepathT2S)
             inBaseName = os.path.basename(name)
             outBaseName = string.join(inBaseName.split("_")[0:-2], "_")
             outputdirection = dirname + outBaseName + '_T2S_Mfilter' + '.nrrd'             
-            sitk.WriteImage(self.imagimageT2SProcessedeWF, outputdirection)
+            sitk.WriteImage(self.imageT2SProcessed, outputdirection)
         else:
             return self.imageT2SProcessed   
